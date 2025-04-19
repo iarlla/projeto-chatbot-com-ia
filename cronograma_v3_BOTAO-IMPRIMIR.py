@@ -6,6 +6,7 @@ from threading import Timer
 from datetime import datetime, timedelta
 import json
 from dateutil.parser import parse
+import os
 
 # 1. Configuração da API do Google Gemini
 try:
@@ -243,12 +244,45 @@ HTML_TEMPLATE = """
                 padding: 3px 0;
             }
         }
+        /* Estilos para a tabela de cronograma */
+        .study-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 0.9em;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .study-table thead tr {
+            background-color: var(--primary);
+            color: white;
+            text-align: left;
+        }
+
+        .study-table th,
+        .study-table td {
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+        }
+
+        .study-table tbody tr {
+            border-bottom: 1px solid #dddddd;
+        }
+
+        .study-table tbody tr:nth-of-type(even) {
+            background-color: #f3f3f3;
+        }
+
+        .study-table tbody tr:last-of-type {
+            border-bottom: 2px solid var(--primary);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎓 Assistente de Estudos com IA</h1>
-        
+
+        <!-- Formulário para captura de dados do usuário -->
         <form id="studyForm" method="POST">
             <div class="form-group">
                 <label for="interests">Áreas de Interesse:</label>
@@ -259,6 +293,7 @@ HTML_TEMPLATE = """
             <div class="form-group">
                 <label for="level">Seu Nível Atual:</label>
                 <select id="level" name="level" required>
+                    <option value="" disabled selected>Selecione seu nível</option>
                     <option value="Iniciante">Iniciante</option>
                     <option value="Intermediário">Intermediário</option>
                     <option value="Avançado">Avançado</option>
@@ -291,10 +326,16 @@ HTML_TEMPLATE = """
             <button type="submit">Gerar Plano de Estudos Personalizado</button>
         </form>
         
+        <!-- Indicador de carregamento -->
         <div id="loading" class="loading">
             <p>🔍 Analisando seus dados e criando recomendações personalizadas...</p>
+            <div class="progress-bar">
+                <div class="progress" style="width: 100%; animation: pulse 2s infinite;">
+                </div>
+            </div>
         </div>
-        
+
+        <!-- Área de resultados -->
         <div id="result">
             {% if error %}
                 <div class="error-message">
@@ -323,6 +364,7 @@ HTML_TEMPLATE = """
                         <p>{{ recommendation.overview }}</p>
                     </div>
                     
+                    <!-- Cronograma semanal detalhado -->
                     <div class="timeline">
                         <h2>📅 Cronograma Semanal</h2>
                         {% for week in recommendation.weekly_schedule %}
@@ -372,17 +414,68 @@ HTML_TEMPLATE = """
                             {% endfor %}
                         </ul>
                     </div>
-                    <!-- Botão de impressão -->
-                    <div style="text-align: center; margin-top: 20px;">
-                        <button onclick="window.print()" style="background-color: var(--secondary); width: auto; padding: 10px 20px;">
-                            🖨️ Imprimir Plano de Estudos
-                        </button>
-                    </div>
+                </div>
+                
+                <!-- Cronograma em formato de tabela para visualização alternativa -->
+                <div class="study-table-container">
+                    <h2>📅 Cronograma de Estudos Semanal</h2>
+                    <table class="study-table">
+                        <thead>
+                            <tr>
+                                <th>Semana</th>
+                                <th>Período</th>
+                                <th>Foco Principal</th>
+                                <th>Tópicos</th>
+                                <th>Horas Sugeridas</th>
+                                <th>Materiais</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for week in recommendation.weekly_schedule %}
+                            <tr>
+                                <td>{{ week.week_number }}</td>
+                                <td>{{ week.start_date }} a {{ week.end_date }}</td>
+                                <td>{{ week.focus }}</td>
+                                <td>
+                                    <ul style="margin: 0; padding-left: 20px;">
+                                        {% for topic in week.topics %}
+                                        <li>{{ topic }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </td>
+                                <td>{{ week.suggested_hours }}h</td>
+                                <td>
+                                    <ul style="margin: 0; padding-left: 20px;">
+                                        {% for material in week.materials %}
+                                        <li>{{ material }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Botões de impressão -->
+                <div style="text-align: center; margin-top: 20px;" class="no-print">
+                    <button onclick="printFullPlan()" style="background-color: var(--secondary); width: auto; padding: 10px 20px; margin-right: 10px;">
+                        🖨️ Imprimir Plano Completo (Retrato)
+                    </button>
+                    
+                    <button onclick="printTableOnly()" style="background-color: var(--primary); width: auto; padding: 10px 20px;">
+                        📋 Imprimir Apenas Tabela (Paisagem)
+                    </button>
+                    
+                    <button onclick="exportToPDF()" style="background-color: #EA4335; width: auto; padding: 10px 20px; margin-left: 10px;">
+                        💾 Exportar como PDF
+                    </button>
                 </div>
             {% endif %}
         </div>
     </div>
 
+    <!-- Scripts para interatividade do formulário -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script>
         // Mostra o loading ao enviar o formulário
         document.getElementById('studyForm').addEventListener('submit', function() {
@@ -395,6 +488,198 @@ HTML_TEMPLATE = """
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('start_date').value = today;
         });
+
+        // Função para imprimir o plano completo em retrato
+        function printFullPlan() {
+            const originalTitle = document.title;
+            document.title = "Plano de Estudos Completo - " + originalTitle;
+            
+            const css = `
+                @page {
+                    size: portrait;
+                }
+                body {
+                    -webkit-print-color-adjust: exact;
+                }
+                .study-table {
+                    display: table !important;
+                }
+                .no-print, .print-table-only {
+                    display: none !important;
+                }
+            `;
+            
+            printWithStyles(css);
+            document.title = originalTitle;
+        }
+
+        // Função para imprimir apenas a tabela em paisagem
+        function printTableOnly() {
+            const originalTitle = document.title;
+            document.title = "Cronograma de Estudos - " + originalTitle;
+            
+            const css = `
+                @page {
+                    size: landscape;
+                    margin: 0.5cm;
+                }
+                body {
+                    visibility: hidden;
+                    margin: 0;
+                    padding: 0;
+                }
+                .study-table-container {
+                    visibility: visible;
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                }
+                .study-table {
+                    width: 100% !important;
+                    font-size: 10pt;
+                    border-collapse: collapse;
+                }
+                .study-table th,
+                .study-table td {
+                    padding: 8px 10px;
+                    border: 1px solid #ddd;
+                }
+                .study-table thead tr {
+                    background-color: #4285F4 !important;
+                    color: white !important;
+                    -webkit-print-color-adjust: exact;
+                }
+                .no-print {
+                    display: none !important;
+                }
+            `;
+            
+            // Primeiro esconda tudo
+            document.body.querySelectorAll('*').forEach(el => {
+                if (!el.closest('.study-table-container')) {
+                    el.style.visibility = 'hidden';
+                    el.style.position = 'absolute';
+                }
+            });
+            
+            // Depois mostre apenas a tabela
+            const tableContainer = document.querySelector('.study-table-container');
+            if (tableContainer) {
+                tableContainer.style.visibility = 'visible';
+                tableContainer.style.position = 'relative';
+            }
+            
+            printWithStyles(css);
+            document.title = originalTitle;
+            
+            // Restaura a visibilidade após a impressão
+            setTimeout(() => {
+                document.body.querySelectorAll('*').forEach(el => {
+                    el.style.visibility = '';
+                    el.style.position = '';
+                });
+            }, 1500);
+        }
+
+        // Função auxiliar para impressão com estilos personalizados
+        function printWithStyles(css) {
+            const style = document.createElement('style');
+            style.type = 'text/css';
+            style.media = 'print';
+            style.innerHTML = css;
+            
+            document.head.appendChild(style);
+            window.print();
+            
+            // Remove o estilo após a impressão
+            setTimeout(() => {
+                if (style.parentNode) {
+                    document.head.removeChild(style);
+                }
+            }, 1500);
+        }
+
+        // Função para exportar como PDF
+        function exportToPDF() {
+            // Esconde elementos que não devem aparecer no PDF
+            const elementsToHide = [
+                '#studyForm', 
+                '#loading', 
+                '.no-print',
+                '.error-message'
+            ];
+            
+            // Aplica estilo de ocultação
+            elementsToHide.forEach(selector => {
+                const el = document.querySelector(selector);
+                if (el) el.style.display = 'none';
+            });
+
+            // Cria elemento temporário com apenas o conteúdo desejado
+            const contentToPrint = document.querySelector('.result-container').cloneNode(true);
+            const tableToPrint = document.querySelector('.study-table-container').cloneNode(true);
+            
+            const printContainer = document.createElement('div');
+            printContainer.style.padding = '20px';
+            printContainer.appendChild(contentToPrint);
+            printContainer.appendChild(tableToPrint);
+            
+            // Configurações do PDF
+            const opt = {
+                margin: 10,
+                filename: 'plano_estudos_completo_' + new Date().toISOString().slice(0, 10) + '.pdf',
+                image: { 
+                    type: 'jpeg', 
+                    quality: 0.98 
+                },
+                html2canvas: { 
+                    scale: 2,
+                    scrollY: 0,
+                    ignoreElements: (element) => {
+                        return element.classList.contains('no-print');
+                    }
+                },
+                jsPDF: { 
+                    unit: 'mm', 
+                    format: 'a4', 
+                    orientation: 'portrait'
+                },
+                pagebreak: {
+                    mode: ['avoid-all', 'css', 'legacy']
+                }
+            };
+
+            // Mostra mensagem de carregamento
+            const loading = document.createElement('div');
+            loading.innerHTML = '<p style="text-align: center; font-weight: bold; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.2);">Gerando PDF, por favor aguarde...</p>';
+            document.body.appendChild(loading);
+
+            // Gera o PDF
+            html2pdf()
+                .set(opt)
+                .from(printContainer)
+                .save()
+                .then(() => {
+                    document.body.removeChild(loading);
+                    // Restaura elementos ocultados
+                    elementsToHide.forEach(selector => {
+                        const el = document.querySelector(selector);
+                        if (el) el.style.display = '';
+                    });
+                })
+                .catch(err => {
+                    console.error('Erro ao gerar PDF:', err);
+                    document.body.removeChild(loading);
+                    // Restaura elementos ocultados mesmo em caso de erro
+                    elementsToHide.forEach(selector => {
+                        const el = document.querySelector(selector);
+                        if (el) el.style.display = '';
+                    });
+                    alert('Erro ao gerar PDF. Verifique o console para detalhes.');
+                });
+        }
+
     </script>
 </body>
 </html>
@@ -405,6 +690,8 @@ def generate_recommendation(interests, level, goals, time, start_date, end_date=
     try:
         if not model:
             return None, "Serviço de IA indisponível no momento", "Modelo não configurado"
+        
+
         
         # Calcula a duração se a data final for fornecida
         duration_info = ""
@@ -444,6 +731,7 @@ def generate_recommendation(interests, level, goals, time, start_date, end_date=
            - Período (data de início e fim da semana)
            - Objetivos específicos (3-5 itens)
            - Tópicos para estudar (3-5 itens)
+           - Horas sugeridas (distribuição proporcional do tempo total)
            - Materiais recomendados (cursos, livros, vídeos - com fontes)
            - Dicas específicas para aquela semana
         3. RECURSOS COMPLEMENTARES: Lista de materiais extras
@@ -458,6 +746,12 @@ def generate_recommendation(interests, level, goals, time, start_date, end_date=
         - Ferramentas úteis
         - Links quando relevante
 
+        Distribua as horas semanais de forma inteligente, considerando:
+        - Complexidade dos tópicos
+        - Carga cognitiva
+        - Necessidade de prática
+        - Tempo para revisão
+
         Formate a resposta como JSON válido, seguindo este exemplo:
 
         {{
@@ -470,6 +764,7 @@ def generate_recommendation(interests, level, goals, time, start_date, end_date=
                     "end_date": "DD/MM/AAAA",
                     "goals": ["goal1", "goal2"],
                     "topics": ["topic1", "topic2"],
+                    "suggested_hours": 10,
                     "materials": ["material1", "material2"],
                     "tips": ["dica1", "dica2"]
                 }}
@@ -498,7 +793,12 @@ def generate_recommendation(interests, level, goals, time, start_date, end_date=
                         week_end = week_start + timedelta(days=6)
                         week['start_date'] = week_start.strftime('%d/%m/%Y')
                         week['end_date'] = week_end.strftime('%d/%m/%Y')
-                
+                        # Calcula horas sugeridas se não foram fornecidas no resultado
+                        if 'suggested_hours' not in week:
+                            total_weeks = recommendation['duration_weeks']
+                            total_hours = recommendation['total_hours']
+                            week['suggested_hours'] = round(total_hours / total_weeks)
+
                 return recommendation, None, None
             except json.JSONDecodeError:
                 # Fallback para resposta não-JSON
@@ -514,6 +814,7 @@ def generate_recommendation(interests, level, goals, time, start_date, end_date=
             return None, "A IA não retornou uma resposta válida", "Resposta vazia"
             
     except Exception as e:
+        # Tratamento de erros específicos
         error_msg = f"Erro ao gerar recomendações: {str(e)}"
         if "404" in str(e):
             error_msg = "O modelo de IA foi atualizado. Atualize o aplicativo."
