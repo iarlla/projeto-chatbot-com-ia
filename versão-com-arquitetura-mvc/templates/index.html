@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistente de Estudos Inteligente</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>🎓 Assistente de Estudos com IA</h1>
+
+        <form id="studyForm" method="POST">
+            <div class="form-group">
+                <label for="interests">Áreas de Interesse:</label>
+                <input type="text" id="interests" name="interests" 
+                       placeholder="Ex: programação Python, machine learning, marketing digital" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="level">Seu Nível Atual:</label>
+                <select id="level" name="level" required>
+                    <option value="" disabled selected>Selecione seu nível</option>
+                    <option value="Iniciante">Iniciante</option>
+                    <option value="Intermediário">Intermediário</option>
+                    <option value="Avançado">Avançado</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="goals">Seus Objetivos:</label>
+                <textarea id="goals" name="goals" 
+                          placeholder="Ex: Quero me tornar um cientista de dados em 6 meses..." required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="time">Horas Disponíveis por Semana:</label>
+                <input type="number" id="time" name="time" min="5" max="80" 
+                       placeholder="Ex: 15" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="start_date">Data de Início:</label>
+                <input type="date" id="start_date" name="start_date" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="end_date">Data de Término (opcional):</label>
+                <input type="date" id="end_date" name="end_date">
+                <small style="color: #5f6368;">Se não informado, será calculado automaticamente</small>
+            </div>
+            
+            <button type="submit">Gerar Plano de Estudos Personalizado</button>
+        </form>
+        
+        <div id="loading" class="loading">
+            <p>🔍 Analisando seus dados e criando recomendações personalizadas...</p>
+            <div class="progress-bar">
+                <div class="progress" style="width: 100%; animation: pulse 2s infinite;"></div>
+            </div>
+        </div>
+
+        <div id="result">
+            {% if error %}
+                <div class="error-message">
+                    <h3>⚠️ Ocorreu um erro</h3>
+                    <p>{{ error }}</p>
+                    {% if model_status %}
+                        <div class="model-status">Status do modelo: {{ model_status }}</div>
+                    {% endif %}
+                </div>
+            {% endif %}
+            
+            {% if recommendation %}
+                <div class="result-container">
+                    <div class="success-message">
+                        <h3>🎉 Plano de Estudos Gerado!</h3>
+                        <p>Gerado em: {{ date }}</p>
+                        <p>Duração: {{ recommendation.duration_weeks }} semanas ({{ recommendation.total_hours }} horas totais)</p>
+                    </div>
+                    
+                    <div class="progress-bar">
+                        <div class="progress" style="width: {{ recommendation.progress }}%"></div>
+                    </div>
+                    
+                    <div class="recommendation-card">
+                        <h2>📌 Visão Geral</h2>
+                        <p>{{ recommendation.overview }}</p>
+                    </div>
+                    
+                    <div class="timeline">
+                        <h2>📅 Cronograma Semanal</h2>
+                        {% for week in recommendation.weekly_schedule %}
+                            <div class="week-card">
+                                <div class="week-header">
+                                    <h3>Semana {{ week.week_number }}: {{ week.focus }}</h3>
+                                    <span class="date-range">{{ week.start_date }} a {{ week.end_date }}</span>
+                                </div>
+                                <div>
+                                    <h4>Objetivos:</h4>
+                                    <ul>
+                                        {% for goal in week.goals %}
+                                            <li>{{ goal }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                    
+                                    <h4>Tópicos para Estudar:</h4>
+                                    <ul>
+                                        {% for topic in week.topics %}
+                                            <li>{{ topic }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                    
+                                    <h4>Materiais Recomendados:</h4>
+                                    <div class="material-list">
+                                        {% for material in week.materials %}
+                                            <div class="material-item">📚 {{ material }}</div>
+                                        {% endfor %}
+                                    </div>
+                                    
+                                    <h4>Dicas:</h4>
+                                    <ul>
+                                        {% for tip in week.tips %}
+                                            <li>💡 {{ tip }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div class="recommendation-card">
+                        <h2>📚 Recursos Complementares</h2>
+                        <ul>
+                            {% for resource in recommendation.additional_resources %}
+                                <li style="margin-bottom: 10px;">🔗 {{ resource }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="study-table-container">
+                    <h2>📅 Cronograma de Estudos Semanal</h2>
+                    <table class="study-table">
+                        <thead>
+                            <tr>
+                                <th>Semana</th>
+                                <th>Período</th>
+                                <th>Foco Principal</th>
+                                <th>Tópicos</th>
+                                <th>Horas Sugeridas</th>
+                                <th>Materiais</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for week in recommendation.weekly_schedule %}
+                            <tr>
+                                <td>{{ week.week_number }}</td>
+                                <td>{{ week.start_date }} a {{ week.end_date }}</td>
+                                <td>{{ week.focus }}</td>
+                                <td>
+                                    <ul style="margin: 0; padding-left: 20px;">
+                                        {% for topic in week.topics %}
+                                        <li>{{ topic }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </td>
+                                <td>{{ week.suggested_hours }}h</td>
+                                <td>
+                                    <ul style="margin: 0; padding-left: 20px;">
+                                        {% for material in week.materials %}
+                                        <li>{{ material }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div style="text-align: center; margin-top: 20px;" class="no-print">
+                    <button onclick="printFullPlan()" style="background-color: var(--secondary); width: auto; padding: 10px 20px; margin-right: 10px;">
+                        🖨️ Imprimir Plano Completo (Retrato)
+                    </button>
+                    
+                    <button onclick="printTableOnly()" style="background-color: var(--primary); width: auto; padding: 10px 20px;">
+                        📋 Imprimir Apenas Tabela (Paisagem)
+                    </button>
+                    
+                    <button onclick="exportToPDF()" style="background-color: #EA4335; width: auto; padding: 10px 20px; margin-left: 10px;">
+                        💾 Exportar como PDF
+                    </button>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</body>
+</html>
